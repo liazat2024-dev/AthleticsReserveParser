@@ -1,2 +1,3 @@
 requests
+>>>>>>> 2d0ec4dd72abdc682db7466a0c3f51c5bced73e3
 beautifulsoup4
