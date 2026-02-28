@@ -1,0 +1,36 @@
+name: Parse Reserve.la55.ru
+
+on:
+  schedule:
+    - cron: '0 */3 * * *'  # каждые 3 часа
+  workflow_dispatch:        # возможность запускать вручную
+
+jobs:
+  parse:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run parser
+        run: |
+          python reserve_parser.py
+
+      - name: Commit and push JSON
+        run: |
+          git config --local user.name "github-actions"
+          git config --local user.email "actions@github.com"
+          git add reserve_la55_news.json
+          git commit -m "Update news"
+          git push
