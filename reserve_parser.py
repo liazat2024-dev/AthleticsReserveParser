@@ -2,60 +2,93 @@ import requests
 from bs4 import BeautifulSoup
 import json
 from datetime import datetime
-import os
 
-# ===== Настройки =====
 BASE_URL = "https://reserve.la55.ru/"
 DATE_START = datetime(2026, 2, 27)
-JSON_PATH = "reserve_la55_news.json"  # сохраняем в корень репозитория
+JSON_PATH = "reserve_la55_news.json"
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0"
 }
 
-# ===== Парсинг =====
+
 def fetch_and_parse():
-    try:
-        r = requests.get(BASE_URL, headers=HEADERS)
-        r.raise_for_status()
-    except Exception as e:
-        print("Ошибка запроса:", e)
-        return []
-
+    r = requests.get(BASE_URL, headers=HEADERS)
     soup = BeautifulSoup(r.text, "html.parser")
-    lines = soup.get_text("\n").split("\n")
-    results = []
+    lines = [l.strip() for l in soup.get_text("\n").split("\n") if l.strip()]
 
-    for line in lines:
-        text = line.strip()
-        if not text:
+    event_data = {
+        "city": "",
+        "event": "",
+        "date_start": "",
+        "date_end": "",
+        "schedule": [],
+        "results": []
+    }
+
+    capture = False
+
+    for i, line in enumerate(lines):
+
+        # Определяем город
+        if line == "Тюмень":
+            event_data["city"] = line
+
+        # Определяем даты
+        try:
+            dt = datetime.strptime(line, "%d.%m.%Y")
+            if dt >= DATE_START:
+                capture = True
+                if not event_data["date_start"]:
+                    event_data["date_start"] = line
+                else:
+                    event_data["date_end"] = line
+        except:
+            pass
+
+        if not capture:
             continue
-        parts = text.split(" ")
-        for p in parts:
-            if "." in p and len(p) >= 8:
-                try:
-                    dt = datetime.strptime(p, "%d.%m.%Y")
-                    if dt >= DATE_START:
-                        results.append(text)
-                    break
-                except:
-                    pass
-    return results
 
-# ===== Сохранение JSON =====
-def save_json(news_list):
-    unique = list(dict.fromkeys(news_list))  # убираем дубликаты
+        # Название соревнования
+        if "ПЕРВЕНСТВО" in line:
+            event_data["event"] = line
+
+        # Расписание (время + дисциплина)
+        if ":" in line and len(line) <= 5:
+            if i + 2 < len(lines):
+                event_data["schedule"].append({
+                    "time": line,
+                    "discipline": lines[i + 1],
+                    "category": lines[i + 2]
+                })
+
+        # Результаты (место + имя + регион + результат)
+        if line.isdigit():
+            if i + 3 < len(lines):
+                name = lines[i + 1]
+                region = lines[i + 2]
+                result = lines[i + 3]
+                if any(c.isdigit() for c in result):
+                    event_data["results"].append({
+                        "place": int(line),
+                        "name": name,
+                        "region": region,
+                        "result": result
+                    })
+
+    return event_data
+
+
+def save_json(data):
     with open(JSON_PATH, "w", encoding="utf-8") as f:
-        json.dump(unique, f, ensure_ascii=False, indent=2)
-    print(f"Сохранено {len(unique)} записей в {JSON_PATH}")
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
-# ===== Основная функция =====
+
 def main():
-    news = fetch_and_parse()
-    if news:
-        save_json(news)
-    else:
-        print("Новостей не найдено")
+    data = fetch_and_parse()
+    save_json(data)
+    print("JSON обновлён")
+
 
 if __name__ == "__main__":
     main()
