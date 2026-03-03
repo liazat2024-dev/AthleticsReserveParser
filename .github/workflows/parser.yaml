@@ -26,11 +26,10 @@ jobs:
       - name: Run parser
         run: |
           python reserve_parser.py
-
-      - name: Commit and push JSON
-        run: |
-          git config --local user.name "github-actions"
-          git config --local user.email "actions@github.com"
-          git add reserve_la55_news.json
-          git commit -m "Update news"
-          git push
+     - name: Commit and push
+  run: |
+    git config --global user.name "github-actions"
+    git config --global user.email "github-actions@github.com"
+    git add reserve_la55_news.json
+    git commit -m "Auto update JSON" || echo "No changes"
+    git push
