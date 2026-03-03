@@ -1,94 +1,133 @@
 import requests
 from bs4 import BeautifulSoup
+from urllib.parse import urljoin
 import json
-from datetime import datetime
+import re
 
 BASE_URL = "https://reserve.la55.ru/"
-DATE_START = datetime(2026, 2, 27)
-JSON_PATH = "reserve_la55_news.json"
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0"
 }
 
+def get_soup(url):
+    r = requests.get(url, headers=HEADERS, timeout=15)
+    r.raise_for_status()
+    return BeautifulSoup(r.text, "html.parser")
 
-def fetch_and_parse():
-    r = requests.get(BASE_URL, headers=HEADERS)
-    soup = BeautifulSoup(r.text, "html.parser")
-    lines = [l.strip() for l in soup.get_text("\n").split("\n") if l.strip()]
+def parse_images(soup, base_url):
+    images = []
+    for img in soup.find_all("img"):
+        src = img.get("src")
+        if src:
+            images.append(urljoin(base_url, src))
+    return list(set(images))
+
+
+def parse_results_table(soup):
+    results = []
+
+    table = soup.find("table")
+    if not table:
+        return results
+
+    rows = table.find_all("tr")
+
+    for row in rows:
+        cols = row.find_all("td")
+        if len(cols) >= 5:
+            results.append({
+                "place": cols[0].get_text(strip=True),
+                "number": cols[1].get_text(strip=True),
+                "name": cols[2].get_text(strip=True),
+                "region": cols[3].get_text(strip=True),
+                "result": cols[4].get_text(strip=True)
+            })
+
+    return results
+
+
+def parse_discipline(url):
+    soup = get_soup(url)
+
+    discipline = {
+        "name": soup.find("h1").get_text(strip=True) if soup.find("h1") else "",
+        "images": parse_images(soup, BASE_URL),
+        "heats": []
+    }
+
+    # ищем ссылку "Забеги"
+    for link in soup.find_all("a", href=True):
+        if "Забеги" in link.get_text():
+            heat_url = urljoin(BASE_URL, link["href"])
+            heat_soup = get_soup(heat_url)
+
+            discipline["heats"].append({
+                "url": heat_url,
+                "images": parse_images(heat_soup, BASE_URL),
+                "results": parse_results_table(heat_soup)
+            })
+
+    return discipline
+
+
+def parse_day(url):
+    soup = get_soup(url)
+
+    day = {
+        "date": "",
+        "images": parse_images(soup, BASE_URL),
+        "disciplines": []
+    }
+
+    # дата дня
+    date_match = re.search(r"\d{2}\.\d{2}\.\d{4}", soup.get_text())
+    if date_match:
+        day["date"] = date_match.group()
+
+    # ищем дисциплины
+    for link in soup.find_all("a", href=True):
+        if "м" in link.get_text():
+            discipline_url = urljoin(BASE_URL, link["href"])
+            day["disciplines"].append(parse_discipline(discipline_url))
+
+    return day
+
+
+def parse_event(event_url):
+    soup = get_soup(event_url)
 
     event_data = {
         "city": "",
-        "event": "",
+        "event": soup.find("h1").get_text(strip=True) if soup.find("h1") else "",
         "date_start": "",
         "date_end": "",
-        "schedule": [],
-        "results": []
+        "images": parse_images(soup, BASE_URL),
+        "days": []
     }
 
-    capture = False
+    dates = re.findall(r"\d{2}\.\d{2}\.\d{4}", soup.get_text())
+    if dates:
+        event_data["date_start"] = dates[0]
+        if len(dates) > 1:
+            event_data["date_end"] = dates[1]
 
-    for i, line in enumerate(lines):
-
-        # Определяем город
-        if line == "Тюмень":
-            event_data["city"] = line
-
-        # Определяем даты
-        try:
-            dt = datetime.strptime(line, "%d.%m.%Y")
-            if dt >= DATE_START:
-                capture = True
-                if not event_data["date_start"]:
-                    event_data["date_start"] = line
-                else:
-                    event_data["date_end"] = line
-        except:
-            pass
-
-        if not capture:
-            continue
-
-        # Название соревнования
-        if "ПЕРВЕНСТВО" in line:
-            event_data["event"] = line
-
-        # Расписание (время + дисциплина)
-        if ":" in line and len(line) <= 5:
-            if i + 2 < len(lines):
-                event_data["schedule"].append({
-                    "time": line,
-                    "discipline": lines[i + 1],
-                    "category": lines[i + 2]
-                })
-
-        # Результаты (место + имя + регион + результат)
-        if line.isdigit():
-            if i + 3 < len(lines):
-                name = lines[i + 1]
-                region = lines[i + 2]
-                result = lines[i + 3]
-                if any(c.isdigit() for c in result):
-                    event_data["results"].append({
-                        "place": int(line),
-                        "name": name,
-                        "region": region,
-                        "result": result
-                    })
+    # ищем ссылки на дни
+    for link in soup.find_all("a", href=True):
+        if "День" in link.get_text():
+            day_url = urljoin(BASE_URL, link["href"])
+            event_data["days"].append(parse_day(day_url))
 
     return event_data
 
 
-def save_json(data):
-    with open(JSON_PATH, "w", encoding="utf-8") as f:
+if __name__ == "__main__":
+    # ВСТАВЬ СЮДА ССЫЛКУ НА СТРАНИЦУ СОРЕВНОВАНИЯ
+    EVENT_URL = "ВСТАВЬ_ССЫЛКУ_СЮДА"
+
+    data = parse_event(EVENT_URL)
+
+    with open("reserve_la55_news.json", "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-
-def main():
-    data = fetch_and_parse()
-    save_json(data)
-    print("JSON обновлён")
-
-
-if __name__ == "__main__":
-    main()
+    print("Парсинг завершён успешно")
