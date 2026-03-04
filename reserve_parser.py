@@ -123,7 +123,7 @@ def parse_event(event_url):
 
 if __name__ == "__main__":
     # ВСТАВЬ СЮДА ССЫЛКУ НА СТРАНИЦУ СОРЕВНОВАНИЯ
-    EVENT_URL = "https://reserve.la55.ru/event/12345"
+    EVENT_URL = "https://reserve.la55.ru/"
 
     data = parse_event(EVENT_URL)
 
